@@ -1,0 +1,5 @@
+Локальные заметки — храни вне Git или в этом файле (копия supabase.txt.example → supabase.txt).
+
+Не коммить: project ref, service_role, anon key, WB tokens, Telegram token, пароль Postgres.
+
+Команды см. README.md и .env.example

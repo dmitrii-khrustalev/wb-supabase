@@ -1,0 +1,14 @@
+---
+description: Next compute upgrade for Orders API is Pro + Small, not now
+alwaysApply: true
+---
+
+# Supabase compute
+
+Project **Orders API** (`evghcmeqaelckagyxgmk`) stays on **Micro** until the user asks to upgrade.
+
+Agreed next step: **Pro + Small** (2 GB RAM, ~+$5/month). Not Medium, not PITR, unless they say otherwise.
+
+Do not change compute unprompted. If Disk IO, swap, or RAM comes up, remind that Small is the planned upgrade.
+
+Never delete stock snapshot history (`fbo_stocks` / `fbs_stocks` / `fbo_stocks_lk`). Keep full history; limit reads by date window (GAS days), not by deleting rows.

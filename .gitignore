@@ -1,0 +1,35 @@
+# Secrets and local notes (never commit)
+.env
+.env.*
+!.env.example
+supabase.txt
+*.pem
+
+# Clasp — привязка к вашему Google Apps Script (личные scriptId)
+.clasp.json
+.clasp.*.json
+!clasp.example.json
+
+# Supabase CLI cache (project ref, pooler URL)
+supabase/.temp/
+supabase/.branches/
+
+# Dependencies / build
+node_modules/
+.DS_Store
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Client / export data (not for public repo)
+*.xlsx
+*.csv
+~$*
+
+# Client-only Word docs (оставь локально)
+docs/*.docx
+docs/*analysis*.xlsx

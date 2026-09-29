@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 14px; margin: 0; color: #222; }
+    h3 { margin: 0 0 8px; font-size: 16px; }
+    .meta { color: #666; font-size: 12px; margin: 0 0 10px; }
+    .info { background: #e3f2fd; padding: 8px 10px; margin: 0 0 12px; border-radius: 4px; font-size: 12px; }
+    .list { max-height: 380px; overflow: auto; border: 1px solid #eee; border-radius: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 6px 8px; border-bottom: 1px solid #eee; text-align: left; vertical-align: middle; }
+    th { color: #555; font-weight: bold; font-size: 11px; position: sticky; top: 0; background: #fff; }
+    td.sheet { font-weight: bold; }
+    td.muted { color: #888; font-size: 11px; }
+    tr.ok td { background: #e7f3ea; }
+    tr.bad td { background: #f8e6e4; }
+    tr.off td { background: #f5f5f5; color: #888; }
+    .btns { margin-top: 14px; display: flex; gap: 8px; }
+    button { background: #eee; color: #333; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; flex: 1; }
+    button:hover { background: #ddd; }
+    .err { color: #c62828; font-size: 12px; margin-top: 8px; min-height: 16px; }
+  </style>
+</head>
+<body>
+  <h3>📥 Загрузки</h3>
+  <div class="info">Когда лист последний раз записали из базы в эту книгу (колонка «Обновлено» в настройках). Зелёный — сегодня, красный — давно или ещё не грузили.</div>
+  <div class="meta" id="meta">Читаем настройки…</div>
+  <div class="list">
+    <table>
+      <thead>
+        <tr>
+          <th>Лист</th>
+          <th>Вкл</th>
+          <th>Данные на листе</th>
+          <th>В книгу</th>
+          <th>Примечание</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="err" id="err"></div>
+  <div class="btns">
+    <button type="button" onclick="google.script.host.close()">Закрыть</button>
+  </div>
+  <script>
+    function render(data) {
+      var loads = (data && data.loads) || [];
+      var freshN = 0;
+      var onN = 0;
+      var i;
+      for (i = 0; i < loads.length; i++) {
+        if (loads[i].enabled) onN++;
+        if (loads[i].fresh) freshN++;
+      }
+      document.getElementById('meta').textContent =
+        'Кабинет ' + ((data && data.slug) || '—') +
+        (data && data.updated ? ' · сейчас ' + data.updated : '') +
+        ' · сегодня ' + freshN + '/' + onN;
+      var tb = document.getElementById('rows');
+      tb.innerHTML = '';
+      if (!loads.length) {
+        tb.innerHTML = '<tr><td colspan="5">Нет настроек загрузки</td></tr>';
+        return;
+      }
+      for (i = 0; i < loads.length; i++) {
+        var ld = loads[i];
+        var tr = document.createElement('tr');
+        tr.className = !ld.enabled ? 'off' : (ld.fresh ? 'ok' : 'bad');
+        tr.innerHTML =
+          '<td class="sheet">' + esc(ld.sheet) + '</td>' +
+          '<td>' + (ld.enabled ? 'да' : 'нет') + '</td>' +
+          '<td>' + esc(ld.period) + '</td>' +
+          '<td>' + esc(ld.loaded_at) + '</td>' +
+          '<td class="muted">' + esc(ld.note) + '</td>';
+        tb.appendChild(tr);
+      }
+    }
+
+    function esc(v) {
+      return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    google.script.run
+      .withSuccessHandler(render)
+      .withFailureHandler(function (e) {
+        document.getElementById('meta').textContent = '';
+        document.getElementById('err').textContent = e.message || String(e);
+      })
+      .getInfoLoads();
+  </script>
+</body>
+</html>

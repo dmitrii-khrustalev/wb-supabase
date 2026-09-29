@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 14px; margin: 0; color: #222; }
+    h3 { margin: 0 0 10px; font-size: 16px; }
+    .info { background: #e3f2fd; padding: 8px 10px; margin: 0 0 12px; border-radius: 4px; font-size: 12px; }
+    label.sheet { display: block; margin: 0 0 4px; font-weight: bold; font-size: 12px; }
+    select.sheet { width: 100%; padding: 6px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 4px; }
+    .toolbar { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 12px; }
+    .list { max-height: 390px; overflow: auto; border: 1px solid #eee; border-radius: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 6px 8px; border-bottom: 1px solid #eee; text-align: left; vertical-align: middle; }
+    th { color: #555; font-weight: bold; font-size: 11px; position: sticky; top: 0; background: #fff; }
+    td.ru { font-weight: bold; }
+    td.key { color: #888; font-size: 11px; }
+    .tag { color: #888; font-size: 11px; }
+    input[type="checkbox"]:disabled { opacity: 0.85; }
+    input.en.req { accent-color: #6b7280; }
+    input.en.for-info {
+      accent-color: #90caf9;
+      opacity: 1;
+      pointer-events: none;
+    }
+    .btns { margin-top: 14px; display: flex; gap: 8px; }
+    button { background: #4CAF50; color: #fff; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; flex: 1; }
+    button:hover { background: #45a049; }
+    button.ghost { background: #eee; color: #333; }
+    button.ghost:hover { background: #ddd; }
+    .err { color: #c62828; font-size: 12px; margin-top: 8px; min-height: 16px; }
+  </style>
+</head>
+<body>
+  <h3>📋 Какие колонки писать из базы</h3>
+  <div class="info">Галка — поле попадёт на лист. Серые «обяз.» — дата, ключ и оверлей. Светло-голубые — поля info, всегда включены. Вес и регион сюда не входят: их подставляет оверлей кабинета после загрузки.</div>
+  <label class="sheet">Лист</label>
+  <select class="sheet" id="sheet"></select>
+  <div class="toolbar">
+    <label><input type="checkbox" id="allExtra"> все доп.</label>
+    <span class="tag" id="stat"></span>
+  </div>
+  <div class="list">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:36px"></th>
+          <th>Колонка</th>
+          <th>Ключ</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="err" id="err"></div>
+  <div class="btns">
+    <button type="button" onclick="save()">💾 Сохранить</button>
+    <button type="button" class="ghost" onclick="google.script.host.close()">Отмена</button>
+  </div>
+  <script>
+    var DATA = { sheets: [] };
+    var sheetIdx = 0;
+
+    function currentSheet() {
+      return DATA.sheets[sheetIdx] || { sheet: '', columns: [] };
+    }
+
+    function renderSelect() {
+      var sel = document.getElementById('sheet');
+      sel.innerHTML = '';
+      for (var i = 0; i < DATA.sheets.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = DATA.sheets[i].sheet;
+        if (i === sheetIdx) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+
+    function renderRows() {
+      var sh = currentSheet();
+      var tb = document.getElementById('rows');
+      tb.innerHTML = '';
+      var extraOn = 0;
+      var extraN = 0;
+      var cols = sh.columns || [];
+      for (var i = 0; i < cols.length; i++) {
+        var col = cols[i];
+        var tr = document.createElement('tr');
+        var locked = col.required || col.info;
+        var checked = locked || col.enabled ? ' checked' : '';
+        var cls = 'en' + (col.required ? ' req' : '') + (col.info ? ' for-info' : '');
+        var disabled = col.required ? ' disabled' : '';
+        var tag = col.required ? '<span class="tag">обяз.</span>' : '';
+        tr.innerHTML =
+          '<td><input type="checkbox" class="' + cls + '"' + checked + disabled + '></td>' +
+          '<td class="ru"></td>' +
+          '<td class="key"></td>';
+        tr.querySelector('.ru').textContent = col.ru || col.key;
+        tr.querySelector('.key').innerHTML = tag ? tag + ' ' : '';
+        tr.querySelector('.key').appendChild(document.createTextNode(col.key || ''));
+        tb.appendChild(tr);
+        if (!locked) {
+          extraN++;
+          if (col.enabled) extraOn++;
+        }
+      }
+      document.getElementById('allExtra').checked = extraN > 0 && extraOn === extraN;
+      document.getElementById('stat').textContent = extraN ? (extraOn + ' из ' + extraN + ' доп.') : '';
+    }
+
+    function syncFromDom() {
+      var sh = currentSheet();
+      var boxes = document.querySelectorAll('#rows .en');
+      var cols = sh.columns || [];
+      for (var i = 0; i < cols.length && i < boxes.length; i++) {
+        if (cols[i].required || cols[i].info) {
+          cols[i].enabled = true;
+          boxes[i].checked = true;
+        } else {
+          cols[i].enabled = boxes[i].checked;
+        }
+      }
+    }
+
+    document.getElementById('sheet').onchange = function () {
+      syncFromDom();
+      sheetIdx = Number(this.value) || 0;
+      renderRows();
+    };
+
+    document.getElementById('allExtra').onchange = function () {
+      var on = this.checked;
+      var sh = currentSheet();
+      var boxes = document.querySelectorAll('#rows .en');
+      var cols = sh.columns || [];
+      for (var i = 0; i < cols.length && i < boxes.length; i++) {
+        if (cols[i].required || cols[i].info) continue;
+        cols[i].enabled = on;
+        boxes[i].checked = on;
+      }
+      var extraN = 0;
+      var extraOn = 0;
+      for (i = 0; i < cols.length; i++) {
+        if (cols[i].required || cols[i].info) continue;
+        extraN++;
+        if (cols[i].enabled) extraOn++;
+      }
+      document.getElementById('stat').textContent = extraN ? (extraOn + ' из ' + extraN + ' доп.') : '';
+    };
+
+    document.getElementById('rows').onchange = function () {
+      syncFromDom();
+      var sh = currentSheet();
+      var extraN = 0;
+      var extraOn = 0;
+      var cols = sh.columns || [];
+      for (var i = 0; i < cols.length; i++) {
+        if (cols[i].required || cols[i].info) continue;
+        extraN++;
+        if (cols[i].enabled) extraOn++;
+      }
+      document.getElementById('allExtra').checked = extraN > 0 && extraOn === extraN;
+      document.getElementById('stat').textContent = extraN ? (extraOn + ' из ' + extraN + ' доп.') : '';
+    };
+
+    function save() {
+      document.getElementById('err').textContent = '';
+      syncFromDom();
+      google.script.run
+        .withSuccessHandler(function () { google.script.host.close(); })
+        .withFailureHandler(function (e) { document.getElementById('err').textContent = e.message || String(e); })
+        .saveColumnSettings(DATA);
+    }
+
+    var DATA = <?!= payload ?>;
+    renderSelect();
+    renderRows();
+  </script>
+</body>
+</html>

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 14px; margin: 0; color: #222; }
+    h3 { margin: 0 0 10px; font-size: 16px; }
+    .info { background: #e3f2fd; padding: 8px 10px; margin: 0 0 12px; border-radius: 4px; font-size: 12px; }
+    label { display: block; margin: 10px 0 4px; font-weight: bold; font-size: 12px; }
+    input, select { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+    .row { display: flex; gap: 8px; }
+    .row > div { flex: 1; }
+    .btns { margin-top: 14px; display: flex; gap: 8px; }
+    button { background: #4CAF50; color: #fff; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; flex: 1; }
+    button:hover { background: #45a049; }
+    button:disabled { background: #9ccc9c; cursor: default; }
+    button.ghost { background: #eee; color: #333; }
+    button.ghost:hover { background: #ddd; }
+    .err { color: #c62828; font-size: 12px; margin-top: 8px; min-height: 16px; }
+  </style>
+</head>
+<body>
+  <h3 id="title">sku</h3>
+  <div class="info" id="hint"></div>
+  <div id="skuWrap">
+    <label for="sku">Товар</label>
+    <select id="sku"></select>
+  </div>
+  <div class="row">
+    <div>
+      <label for="grain">Период</label>
+      <select id="grain">
+        <option value="day">день</option>
+        <option value="week">неделя</option>
+        <option value="month">месяц</option>
+      </select>
+    </div>
+    <div>
+      <label for="compare">Сравнение</label>
+      <select id="compare">
+        <option value="day">ко дню</option>
+        <option value="week">к неделе</option>
+        <option value="month">к месяцу</option>
+      </select>
+    </div>
+  </div>
+  <label for="day">Дата якоря</label>
+  <input class="day" id="day" type="date">
+  <div class="err" id="err"></div>
+  <div class="btns">
+    <button type="button" id="go" onclick="go()">Посчитать</button>
+    <button type="button" class="ghost" onclick="google.script.host.close()">Отмена</button>
+  </div>
+  <script>
+    var DATA = <?!= payload ?>;
+    document.getElementById('title').textContent = DATA.title || 'sku';
+    document.getElementById('hint').textContent = DATA.hint || '';
+    if (DATA.day) document.getElementById('day').value = DATA.day;
+    if (DATA.grain) document.getElementById('grain').value = DATA.grain;
+    if (DATA.compare) document.getElementById('compare').value = DATA.compare;
+    if (DATA.kind === 'all') document.getElementById('skuWrap').style.display = 'none';
+
+    var list = DATA.skus || [];
+    var sel = document.getElementById('sku');
+    var i;
+    for (i = 0; i < list.length; i++) {
+      var o = document.createElement('option');
+      o.value = list[i].nm_id;
+      o.textContent = (list[i].sa_name || list[i].nm_id) + ' — ' + (list[i].title || '');
+      if (DATA.nm_id && DATA.nm_id === list[i].nm_id) o.selected = true;
+      sel.appendChild(o);
+    }
+
+    function syncCompare() {
+      var g = document.getElementById('grain').value;
+      var c = document.getElementById('compare');
+      var opts = c.options;
+      var i;
+      for (i = 0; i < opts.length; i++) {
+        if (g === 'day') opts[i].disabled = false;
+        else if (g === 'week') opts[i].disabled = opts[i].value === 'day';
+        else opts[i].disabled = opts[i].value !== 'month';
+      }
+      if (c.options[c.selectedIndex].disabled) {
+        c.value = g === 'month' ? 'month' : 'week';
+      }
+    }
+    document.getElementById('grain').onchange = syncCompare;
+    syncCompare();
+
+    function go() {
+      var err = document.getElementById('err');
+      var btn = document.getElementById('go');
+      err.textContent = '';
+      var day = document.getElementById('day').value;
+      if (!day) {
+        err.textContent = 'Выберите дату';
+        return;
+      }
+      var body = {
+        kind: DATA.kind || 'card',
+        day: day,
+        grain: document.getElementById('grain').value,
+        compare: document.getElementById('compare').value,
+        nm_id: document.getElementById('sku').value
+      };
+      if (body.kind !== 'all' && !body.nm_id) {
+        err.textContent = 'Выберите товар';
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'Считаем…';
+      google.script.run
+        .withSuccessHandler(function (res) {
+          var sheet = (res && res.sheet) || 'sku';
+          var sec = res && res.ms != null ? (Number(res.ms) / 1000).toFixed(1) : '';
+          var extra = res && res.n != null ? ' · ' + res.n + ' стр.' : '';
+          document.body.innerHTML =
+            '<h3>Выгрузка завершена</h3>' +
+            '<div class="info">' + sheet + extra + (sec ? ' · ' + sec + ' с' : '') + '</div>' +
+            '<div class="btns"><button type="button" onclick="google.script.host.close()">ОК</button></div>';
+        })
+        .withFailureHandler(function (e) {
+          btn.disabled = false;
+          btn.textContent = 'Посчитать';
+          err.textContent = e.message || String(e);
+        })
+        .runSkuForPick(body);
+    }
+  </script>
+</body>
+</html>

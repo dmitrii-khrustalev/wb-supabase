@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 14px; margin: 0; color: #222; }
+    h3 { margin: 0 0 10px; font-size: 16px; }
+    .info { background: #e3f2fd; padding: 8px 10px; margin: 0 0 12px; border-radius: 4px; font-size: 12px; }
+    label.cab { display: block; margin: 0 0 4px; font-weight: bold; font-size: 12px; }
+    input.cab { width: 160px; padding: 6px; margin-bottom: 12px; border: 1px solid #ccc; border-radius: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 6px 4px; border-bottom: 1px solid #eee; text-align: left; vertical-align: middle; }
+    th { color: #555; font-weight: bold; font-size: 11px; }
+    td.sheet { font-weight: bold; }
+    td.meta { color: #888; font-size: 11px; }
+    input.days { width: 64px; padding: 4px 6px; border: 1px solid #ccc; border-radius: 4px; }
+    input.days:disabled { background: #f5f5f5; color: #888; }
+    .btns { margin-top: 14px; display: flex; gap: 8px; }
+    button { background: #4CAF50; color: #fff; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; flex: 1; }
+    button:hover { background: #45a049; }
+    button.ghost { background: #eee; color: #333; }
+    button.ghost:hover { background: #ddd; }
+    .err { color: #c62828; font-size: 12px; margin-top: 8px; min-height: 16px; }
+  </style>
+</head>
+<body>
+  <h3>⚙️ Что качать из базы</h3>
+  <div class="info">Галка — участвует в «Загрузить всё». Дней — сколько строк держать на листе (число или «все»). Товары и склады FBS — целиком; история цен — 30 дней. При «Пересоздать служебные листы» галки сохраняются.</div>
+  <label class="cab">Кабинет</label>
+  <input class="cab" id="slug" type="text">
+  <table>
+    <thead>
+      <tr>
+        <th><input type="checkbox" id="all" title="Все"></th>
+        <th>Лист</th>
+        <th>Дней</th>
+        <th>Сейчас на листе</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="err" id="err"></div>
+  <div class="btns">
+    <button type="button" onclick="save()">💾 Сохранить</button>
+    <button type="button" class="ghost" onclick="google.script.host.close()">Отмена</button>
+  </div>
+  <script>
+    var DATA = { slug: 'main', rows: [] };
+
+    function render(data) {
+      DATA = data || DATA;
+      document.getElementById('slug').value = DATA.slug || 'main';
+      var tb = document.getElementById('rows');
+      tb.innerHTML = '';
+      var on = 0;
+      for (var i = 0; i < DATA.rows.length; i++) {
+        var r = DATA.rows[i];
+        if (r.enabled) on++;
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td><input type="checkbox" class="en"' + (r.enabled ? ' checked' : '') + '></td>' +
+          '<td class="sheet"></td>' +
+          '<td><input class="days" ' + (r.daysLocked ? 'disabled' : '') + '></td>' +
+          '<td class="meta"></td>';
+        tr.querySelector('.sheet').textContent = r.sheet;
+        var days = tr.querySelector('.days');
+        days.value = r.daysLocked ? 'все' : (r.days || '');
+        var meta = [];
+        if (r.period) meta.push(r.period);
+        if (r.updated) meta.push(r.updated);
+        tr.querySelector('.meta').textContent = meta.join(' · ');
+        tb.appendChild(tr);
+      }
+      document.getElementById('all').checked = on === DATA.rows.length && DATA.rows.length > 0;
+    }
+
+    document.getElementById('all').onchange = function () {
+      var on = this.checked;
+      var boxes = document.querySelectorAll('.en');
+      for (var i = 0; i < boxes.length; i++) boxes[i].checked = on;
+    };
+
+    function save() {
+      document.getElementById('err').textContent = '';
+      var boxes = document.querySelectorAll('.en');
+      var days = document.querySelectorAll('.days');
+      var rows = [];
+      for (var i = 0; i < DATA.rows.length; i++) {
+        rows.push({
+          sheet: DATA.rows[i].sheet,
+          enabled: boxes[i].checked,
+          days: DATA.rows[i].daysLocked ? 'все' : String(days[i].value || '').trim()
+        });
+      }
+      google.script.run
+        .withSuccessHandler(function () { google.script.host.close(); })
+        .withFailureHandler(function (e) { document.getElementById('err').textContent = e.message || String(e); })
+        .saveLoadSettings({ slug: document.getElementById('slug').value, rows: rows });
+    }
+
+    var DATA = <?!= payload ?>;
+    render(DATA);
+  </script>
+</body>
+</html>

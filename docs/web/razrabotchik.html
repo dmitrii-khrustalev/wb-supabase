@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Разработчик — база и GAS</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <div class="kicker">WB → база → Google Sheets</div>
+      <h1>Инструкция для разработчика</h1>
+      <p>Откуда данные, как считаются отчёты, как подключить нового клиента к базе и к книге.</p>
+      <p class="doc-date">01.09.2026</p>
+    </div>
+    <nav class="toc">
+      <a href="index.html">← все инструкции</a>
+      <a href="#arch">Архитектура</a>
+      <a href="#calc">Формулы</a>
+      <a href="#db">Клиент в базу</a>
+      <a href="#gas">Клиент в GAS</a>
+    </nav>
+
+    <h2 id="arch">Картина целиком</h2>
+    <div class="flow">
+      <div class="box">WB API<small>11 датасетов</small></div>
+      <div class="arrow">→</div>
+      <div class="box">Cron + Edge<small>каждую минуту порция</small></div>
+      <div class="arrow">→</div>
+      <div class="box">Postgres<small>сырьё + RPC</small></div>
+      <div class="arrow">→</div>
+      <div class="box">GAS 01<small>листы сырья</small></div>
+      <div class="arrow">→</div>
+      <div class="box">03–08<small>отчёты</small></div>
+    </div>
+    <p>Несколько кабинетов — одна база, <code>seller_id</code>. Токен WB в Vault, не в таблице. Общие скрипты 01/03/05–08. Файлы <strong>02 и 04 только текущему кабинету</strong> — другому не копировать.</p>
+
+    <h2>Датасеты</h2>
+    <table class="data">
+      <tr><th>Датасет</th><th>Таблица</th><th>Daily</th><th>Лист</th></tr>
+      <tr><td>finance</td><td>finance_rows</td><td>вчера + 7 дней</td><td>Финансовые ежедневные</td></tr>
+      <tr><td>adv_stats</td><td>adv_stats</td><td>вчера + 7 дней</td><td>Рекламные расходы</td></tr>
+      <tr><td>products</td><td>products + sizes</td><td>снимок</td><td>Товары</td></tr>
+      <tr><td>fbo_orders / stocks / fbw_supplies</td><td>fbo_* / fbw_*</td><td>заказы lookback 3д, остатки снимок</td><td>Заказы / Остатки / Поставки FBW, В пути</td></tr>
+      <tr><td>fbs_orders / stocks / supplies / warehouses</td><td>fbs_*</td><td>статусы 30д, остатки снимок</td><td>Заказы / Остатки / Поставки / Склады FBS</td></tr>
+    </table>
+    <div class="note">Cron UTC: <code>* * * * *</code> sync-tick; <code>0 2 * * *</code> daily 05:00 МСК; <code>0 6 * * *</code> Telegram 09:00 только если ночная выгрузка с ошибками. Склады WB и тарифы транзита не грузим (API 404). PII клиентов FBS в Sheets не отдаём.</div>
+
+    <h2>Файлы GAS</h2>
+    <table class="data">
+      <tr><th>Файл</th><th>Кому</th><th>Зачем</th></tr>
+      <tr><td>01 + html настроек</td><td>всем</td><td>Сырьё, меню, ключ anon, авто 05:05</td></tr>
+      <tr><td>02 overlay</td><td>этот кабинет</td><td>Вес, регион, ЗаказыЛК; имя и вес на ЗаказыЛК — значениями</td></tr>
+      <tr><td>03 reports</td><td>всем</td><td>Продажи, реклама, заказы, поставка</td></tr>
+      <tr><td>04 print</td><td>этот кабинет</td><td>Печать Поставка_2 и Поставка_new; файл склад_дата_время.xlsx</td></tr>
+      <tr><td>05–08</td><td>всем</td><td>info, заполненность, sku, stock</td></tr>
+    </table>
+    <p>onOpen в 01. Меню: stock, без «Сводная». «Листы данных» — скрыть/показать сырьё, утро пишет и в скрытые. Функции 03 в меню не выведены — кнопки листа или редактор. «Проверить связь» смотрит slug <code>main</code>; для нового кабинета проверка = загрузка листа после slug в настройках.</p>
+
+    <h2 id="calc">Как считается</h2>
+    <p>Отчёты 03 и сводки 05–08 читают RPC базы, не ячейки книги. Исключения — вес с «Товар+Вес», ЗаказыЛК и регион поставки: их по-прежнему даёт файл 02 с листов этой книги.</p>
+    <h3>Вес / к-во продаж</h3>
+    <p>RPC <code>report_finance_daily</code>. Дата <code>rr_dt</code>. Только Продажа / Возврат. Продажа +, возврат −. Вес = шт × «Товар+Вес» (хук 02, иначе 0).</p>
+    <h3>Реклама</h3>
+    <p>Расход = Σ (клики × CPC), не колонка spend API. ДРР = расход / нетто выручка. Стык артикула через <code>products.vendor_code</code>.</p>
+    <h3>Заказы FBW</h3>
+    <p>С 02 — лист ЗаказыЛК (C дата, D артикул, G к-во, I имя, K вес). Без 02 — <code>report_fbo_orders_daily</code>.</p>
+    <h3>Заказы FBS</h3>
+    <p><code>report_fbs_orders_daily</code>, день = created_at МСК. Дни на листе подряд от A1 до A2.</p>
+    <h3>Поставка_new</h3>
+    <p>A1–A2 заказы, A3–A4 в пути, A5 горизонт. Остатки — последний снимок. В пути — FBW не «Принято» (код 5). К поставке = max(0, горизонт×среднее − остаток − в пути). Печать: Поставка_2 склад в B5, Поставка_new блок в B4 («Склад WB» / «Склад продавца»). Файл «склад_ГГГГММДД_ЧЧ-ММ-СС.xlsx», не temp.</p>
+    <h3>info</h3>
+    <p>Продажи нетто. Реклама клики×CPC. К перечислению — все строки дня. Daily: к пред. и к среднему 7д. Weekly всегда пн–вс. История переписывается утром, не выбором даты. Пример: Продажа 82 − Возврат 1 = 81 на info.</p>
+    <h3>sku / stock</h3>
+    <p>Те же формулы в разрезе nm_id. Остатки: спрос 7 полных дней, снимок остатка, покрытие в днях. Меню «stock».</p>
+    <p>Книга: окно «Дней» — старше удаляем, середину не трогаем, из базы вчера+сегодня и дыры. Лимит ~6 мин, продолжит через минуту.</p>
+
+    <h2 id="db">Новый клиент → база</h2>
+    <div class="step"><div class="num">1</div><div>Токен WB: статистика, финансы, реклама, FBS, поставки FBW. Не в git.</div></div>
+    <div class="step"><div class="num">2</div><div>slug латиницей уникальный, <code>history_from</code> — с какой даты история.</div></div>
+    <pre>insert into public.sellers (name, slug, history_from)
+values ('ООО Асме', 'acme', '2026-03-01');
+select vault.create_secret('WB_ТОКЕН', 'wb_token_acme');
+-- npx supabase secrets set WB_TOKEN_ACME=WB_ТОКЕН</pre>
+    <div class="step"><div class="num">3</div><div>История: POST <code>/functions/v1/enqueue-history</code> с <code>{"slug":"acme"}</code> и service_role. Тик сам разгребёт.</div></div>
+    <div class="step"><div class="num">4</div><div>Контроль <code>sync_jobs</code> / <code>load_runs</code>. Daily подхватит <code>is_active</code> с 05:00. Выключить: <code>is_active = false</code>.</div></div>
+
+    <h2 id="gas">Новый клиент → книга</h2>
+    <div class="step"><div class="num">1</div><div>Пустой Spreadsheet, не копия боевой книги (чужие Товар+Вес).</div></div>
+    <div class="step"><div class="num">2</div><div>Скопировать 01, 03, 05–08 и html. <strong>Не копировать 02 и 04</strong>, пока не заказан оверлей.</div></div>
+    <div class="step"><div class="num">3</div><div>Ключ базы = anon JWT (<code>eyJ…</code>), не service_role.</div></div>
+    <div class="step"><div class="num">4</div><div>Создать настройки → кабинет = slug → Загрузить всё → Ежедневно 05:05.</div></div>
+    <div class="step"><div class="num">5</div><div>Листы отчётов с A1/A2, функции 03. Сверка <code>supabase/sql/sheet_check.sql</code>.</div></div>
+    <div class="extra">Вес и регион новому клиенту — отдельный файл 02, не общая часть. Меню: stock, без «Сводная». Telegram: клавиатура внизу (Цифры, Обновить всё, Один блок, Отменить), команд в Menu нет, /start ставит кнопки. Цифры / утро: buildInfoText — блоки info daily, HTML жирные заголовки, Δ только к вчера. Daily done → sync-tick одно сообщение: эти цифры + «✅ База 11/11». 09:00 notify-digest только если ошибки. Обновить всё / Один блок → enqueue + request_bot_load; когда джобы done — «✅ База обновила… Загрузите лист в Google». Книга из бота сама не заливается. sku утром не пересчитывается.</div>
+
+    <h2>Сбои</h2>
+    <table class="data">
+      <tr><th>Симптом</th><th>Куда</th></tr>
+      <tr><td>401/403 WB</td><td>токен и категории API</td></tr>
+      <tr><td>Кабинет не найден</td><td>slug книги ≠ sellers.slug</td></tr>
+      <tr><td>Вес 0</td><td>нет 02 / пустой Товар+Вес</td></tr>
+      <tr><td>info ≠ шт на финансах</td><td>не вычли возврат</td></tr>
+      <tr><td>Утро пустое</td><td>daily не done до 12:00; триггер; 6 мин — Продолжить</td></tr>
+    </table>
+    <footer><a href="index.html">Все инструкции</a> · Word: 01_Разработчик_подключение_клиента.docx</footer>
+  </div>
+</body>
+</html>
