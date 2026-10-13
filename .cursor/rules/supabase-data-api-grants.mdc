@@ -1,0 +1,37 @@
+---
+description: Supabase Data API GRANTs for new public tables (from 2026-10-30)
+globs: supabase/migrations/**/*.sql
+alwaysApply: false
+---
+
+# Supabase Data API — явные GRANT с 30 октября 2026
+
+Supabase **перестаёт автоматически** выдавать Data API доступ к **новым** таблицам в `public` (существующие проекты). Старые таблицы и их grants **не меняются**.
+
+С **30.10.2026** любая новая таблица в `public` без явного `GRANT` недоступна через PostgREST / supabase-js / GraphQL → `permission denied` (в ошибке часто есть нужный `GRANT`).
+
+**Миграции тоже:** `create table` без grants в той же migration → таблица «слепая» после deploy, preview branch, `supabase db reset`.
+
+## Что делать в каждой migration с новой таблицей
+
+Добавлять grants **в той же migration**, сразу после создания. Базовый шаблон от Supabase:
+
+```sql
+grant select on public.your_table to anon;
+grant select, insert, update, delete on public.your_table to authenticated;
+grant select, insert, update, delete on public.your_table to service_role;
+```
+
+Подстраивать роли под фактическое использование и **Data API settings** проекта (Orders API `evghcmeqaelckagyxgmk`).
+
+## Конвенция этого репо (WB / GAS)
+
+- Сырые таблицы sync: обычно **только `service_role`** — `select, insert, update, delete`; клиенту Sheets — через **`sheet_*` views**.
+- `sheet_*` для anon JWT в Google Sheets: **`grant select on … to anon, authenticated`** (см. недавние migrations).
+- RPC/views: `grant execute` / `grant select` явно, как в `fix_sheet_daily_status_grants` и аналогах.
+- Не полагаться на auto-grant после 30.10.
+
+## Перед merge migration
+
+- Новые объекты в `public` имеют нужные grants в **этом же файле**.
+- Если таблица не должна торчать в Data API — не давать `anon`/`authenticated`; проверить exposure в Dashboard.
